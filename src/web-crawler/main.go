@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 )
 
 type Fetcher interface {
@@ -13,20 +14,39 @@ type Fetcher interface {
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
 func Crawl(url string, depth int, fetcher Fetcher) {
-	// TODO: Fetch URLs in parallel.
-	// TODO: Don't fetch the same URL twice.
-	// This implementation doesn't do either:
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(depth)
+
+	lookupTable := make(map[string]bool)
+
+	_Crawl(url, depth, fetcher, &waitGroup, lookupTable)
+
+	waitGroup.Wait()
+	return
+}
+
+// Fetch URLs in parallel
+// Don't fetch the same URL twice
+func _Crawl(url string, depth int, fetcher Fetcher, waitGroup *sync.WaitGroup, lookupTable map[string]bool) {
 	if depth <= 0 {
 		return
 	}
-	body, urls, err := fetcher.Fetch(url)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Printf("found: %s %q\n", url, body)
-	for _, u := range urls {
-		Crawl(u, depth-1, fetcher)
+
+	if !lookupTable[url] {
+		body, urls, err := fetcher.Fetch(url)
+		lookupTable[url] = true
+
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		defer waitGroup.Done()
+
+		fmt.Printf("found: %s %q\n", url, body)
+		for _, u := range urls {
+			go _Crawl(u, depth-1, fetcher, waitGroup, lookupTable)
+		}
 	}
 	return
 }
